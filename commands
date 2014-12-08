@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# ROOT AWS KEYS
+
+set -eo pipefail; [[ $DOKKU_TRACE ]] && set -x
+
+GROUPNAME=dokku-users
+
+# REMOVE FOR LIVE
+DOKKU_ROOT=$HOME
+
+_path='.aws_keys'
+
+APP=$2
+OLDHOME=$HOME
+HOME="$DOKKU_ROOT/$_path"
+APP_KEY_FILE=$HOME/aws_keys_$APP
+mkdir -p $HOME
+
+awscmd() {
+  docker run -it --rm -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY -e AWS_DEFAULT_REGION=$AWS_DEFAULT_REGION centurylink/aws-cli-wetty aws $*
+}
+
+check_app() {
+  if [[ -z "$APP" ]]; then
+    echo "You must specify an app name"
+    exit 1
+  fi
+  [[ ! -d "$DOKKU_ROOT/$APP" ]] && echo "App $APP does not exist" && exit 1
+  echo
+}
+
+rdom () { local IFS=\> ; read -d \< E C ;}
+
+check_already_exists() {
+  if [[ -f "$APP_KEY_FILE" ]]; then
+    echo "Gosh, we already have keys for the app: $APP"
+    exit 1
+  fi
+  echo
+}
+
+load_root_keys() {
+  if ! source $HOME/root_keys; then
+    echo "Damn!!!! Configure the root keys with aws_keys:configure"
+    exit 1
+  fi
+  echo "Loaded Root keys"
+}
+
+ensure_aws_group_exists() {
+  if ! awscmd iam get-group --group-name $GROUPNAME; then
+    echo "$GROUPNAME doesnt exist!"
+    if awscmd iam create-group --group-name $GROUPNAME; then
+      echo "Created group $GROUPNAME"
+    else
+      echo "Damn, I fail. Crap."
+      exit 1
+    fi
+  else
+    echo "Group $GROUPNAME exists!"
+  fi
+}
+
+
+ensure_aws_user_exists() {
+  if ! awscmd iam create-user --user-name $USERNAME; then
+    echo "User: $USERNAME already exist!"
+  else
+    echo "User: $USERNAME created!"
+  fi
+}
+
+ensure_aws_user_membership_in_group() {
+  if ! awscmd iam add-user-to-group --user-name $USERNAME --group-name $GROUPNAME; then
+    echo "Membership: User $USERNAME is alread in Group $GROUPNAME!"
+  else
+    echo "Membership: User $USERNAME added to Group $GROUPNAME!"
+  fi
+}
+
+case "$1" in
+  hello)
+    [[ -z $2 ]] && echo "Please specify an app to run the command on" && exit 1
+
+    APP="$2";
+
+    echo "Hello $APP"
+    ;;
+  aws_keys:configure)
+    if [ -z "$2" ] || [ -z "$3" ] ; then
+      echo "Seriously! PLEASE specify the keys, man!!!"
+    fi
+    echo "export AWS_ACCESS_KEY_ID=$2" > $HOME/root_keys
+    echo "export AWS_SECRET_ACCESS_KEY=$3" >> $HOME/root_keys
+    echo "export AWS_DEFAULT_REGION=us-west-1" >> $HOME/root_keys
+    ;;
+
+
+  aws_keys:create)
+
+    check_app
+    check_already_exists
+    load_root_keys
+    ensure_aws_group_exists
+    USERNAME="dokku-$APP"
+    ensure_aws_user_exists
+    ensure_aws_user_membership_in_group
+    if ! awscmd iam create-access-key --user-name $USERNAME > $APP_KEY_FILE;then
+      rm $APP_KEY_FILE
+      echo "Failed to create the keys"
+      exit 1
+    else
+      echo "Successfully created the keys!!!!!"
+    fi
+
+    echo "Assigning AWS Keys"
+
+    ;;
+
+  help)
+    cat && cat<<EOF
+    aws_keys:configure  <AWS_ACCESS_KEY_ID> <AWS_SECRET_ACCESS_KEY> Configure Root AWS Key and Secret
+    aws_keys:env        <app>                                       Env AWS Keys to App
+    aws_keys:create     <app>                                       Create AWS Keys to App
+    aws_keys:rm         <app>                                       Remove AWS Keys to App
+EOF
+    ;;
+
+  *)
+    exit $DOKKU_NOT_IMPLEMENTED_EXIT
+    ;;
+
+esac
