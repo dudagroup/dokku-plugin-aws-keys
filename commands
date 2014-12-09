@@ -22,18 +22,26 @@ awscmd() {
 
 check_app() {
   if [[ -z "$APP" ]]; then
-    echo "You must specify an app name"
+    echo "Please specify an <app name>"
     exit 1
   fi
-  [[ ! -d "$DOKKU_ROOT/$APP" ]] && echo "App $APP does not exist" && exit 1
+  [[ ! -d "$DOKKU_ROOT/$APP" ]] && echo "App $APP does not exist!" && exit 1
   echo
 }
 
-rdom () { local IFS=\> ; read -d \< E C ;}
-
 check_already_exists() {
   if [[ -f "$APP_KEY_FILE" ]]; then
-    echo "Gosh, we already have keys for the app: $APP"
+    echo "App: $APP already has AWS Keys tored in file $APP_KEY_FILE!"
+    echo "Quitting."
+    exit 1
+  fi
+  echo
+}
+
+ensure_exists() {
+  if [[ ! -f "$APP_KEY_FILE" ]]; then
+    echo "There are no stored credentials for App: $APP. Create them with dokku aws_keys:create $APP."
+    echo "Quitting."
     exit 1
   fi
   echo
@@ -79,21 +87,32 @@ ensure_aws_user_membership_in_group() {
 }
 
 case "$1" in
-  hello)
-    [[ -z $2 ]] && echo "Please specify an app to run the command on" && exit 1
-
-    APP="$2";
-
-    echo "Hello $APP"
-    ;;
-
   aws_keys:env)
-    [[ -z $2 ]] && echo "Please specify an app to run the command on" && exit 1
-
-    APP="$2";
-
-    echo "Hello $APP"
+    check_app
+    ensure_exists
+    AWS_ACCESS_KEY_ID=$(perl -ne 'print "$1" if /"AccessKeyId": "(.*)"/' ${APP_KEY_FILE})
+    AWS_SECRET_ACCESS_KEY=$(perl -ne 'print "$1" if /"SecretAccessKey": "(.*)"/' ${APP_KEY_FILE})
+    echo "export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID"
+    echo "export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
     ;;
+
+  aws_keys:rm)
+    check_app
+    load_root_keys
+    ensure_exists
+    RM_AWS_ACCESS_KEY_ID=$(perl -ne 'print "$1" if /"AccessKeyId": "(.*)"/' ${APP_KEY_FILE})
+#    AWS_SECRET_ACCESS_KEY=$(perl -ne 'print "$1" if /"SecretAccessKey": "(.*)"/' ${APP_KEY_FILE})
+    USERNAME=$(perl -ne 'print "$1" if /"UserName": "(.*)"/' ${APP_KEY_FILE})
+    if ! awscmd iam delete-access-key --user-name ${USERNAME} --access-key-id ${RM_AWS_ACCESS_KEY_ID}; then
+      echo "AWS Key $AWS_ACCESS_KEY_ID couldn't be deleted."
+      echo "Quitting."
+      exit 1
+    else
+      rm ${APP_KEY_FILE}
+      echo "AWS Key $AWS_ACCESS_KEY_ID successfully deleted."
+    fi
+    ;;
+
 
   aws_keys:configure)
     if [ -z "$2" ] || [ -z "$3" ] ; then
@@ -114,8 +133,8 @@ case "$1" in
     USERNAME="dokku-$APP"
     ensure_aws_user_exists
     ensure_aws_user_membership_in_group
-    if ! awscmd iam create-access-key --user-name $USERNAME > $APP_KEY_FILE;then
-      rm $APP_KEY_FILE
+    if ! awscmd iam create-access-key --user-name ${USERNAME} > ${APP_KEY_FILE};then
+      rm ${APP_KEY_FILE}
       echo "Failed to create the keys"
       exit 1
     else
