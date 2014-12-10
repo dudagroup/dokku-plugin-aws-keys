@@ -5,9 +5,6 @@ set -eo pipefail; [[ $DOKKU_TRACE ]] && set -x
 
 GROUPNAME=dokku-users
 
-# REMOVE FOR LIVE
-DOKKU_ROOT=$HOME
-
 _path='.aws_keys'
 
 APP=$2
