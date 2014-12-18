@@ -83,6 +83,14 @@ ensure_aws_user_membership_in_group() {
 }
 
 case "$1" in
+  aws_keys:export)
+    check_app
+    ensure_exists
+    AWS_ACCESS_KEY_ID=$(perl -ne 'print "$1" if /"AccessKeyId": "(.*)"/' ${APP_KEY_FILE})
+    AWS_SECRET_ACCESS_KEY=$(perl -ne 'print "$1" if /"SecretAccessKey": "(.*)"/' ${APP_KEY_FILE})
+    echo "export AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID; export AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY"
+    ;;
+
   aws_keys:env)
     check_app
     ensure_exists
@@ -143,6 +151,7 @@ case "$1" in
     cat && cat<<EOF
     aws_keys:configure  <AWS_ACCESS_KEY_ID> <AWS_SECRET_ACCESS_KEY> Configure Root AWS Key and Secret
     aws_keys:env        <app>                                       Env AWS Keys to App
+    aws_keys:export	<app>					    Display AWS Keys for Shell integration
     aws_keys:create     <app>                                       Create AWS Keys to App
     aws_keys:rm         <app>                                       Remove AWS Keys to App
 EOF
