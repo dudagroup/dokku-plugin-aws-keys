@@ -5,7 +5,7 @@ set -eo pipefail; [[ $DOKKU_TRACE ]] && set -x
 STDIN=$(cat)
 APP="$1"
 
-_env=$(dokku aws-keys:env "$APP")
+_env=$(dokku aws_keys:env "$APP")
 
 if [[ $? -eq 0 ]]; then
   echo "$STDIN $_env"
